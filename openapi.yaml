@@ -1,0 +1,501 @@
+openapi: 3.0.3
+
+info:
+  title: Тёплый дом — внутреннее API микросервисов
+  version: 1.0.0
+  description: >
+    Контракты взаимодействия веб-бэкенда, сервиса интеграции,
+    сервиса управления и сервиса мониторинга.
+
+servers:
+  - url: https://теплыйдом.рф
+    description: Основной домен
+
+tags:
+  - name: Integration
+    description: Сервис интеграции
+  - name: Control
+    description: Сервис управления
+  - name: Monitoring
+    description: Сервис мониторинга
+
+security:
+  - serviceBearer: []
+
+paths:
+  /internal/v1/houses/{houseId}/pairings:
+    post:
+      tags: [Integration]
+      operationId: registerDevice
+      summary: Зарегистрировать устройство в доме
+      description: >
+        Веб-бэкенд предварительно проверяет право пользователя добавлять
+        устройства в дом. Сервис интеграции проверяет данные подключения
+        и создаёт запись об устройстве. REGISTERED означает регистрацию
+        в системе, а не подтверждение, что устройство сейчас в сети.
+      parameters:
+        - name: houseId
+          in: path
+          required: true
+          description: Идентификатор дома
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterDeviceRequest'
+            examples:
+              thermostat:
+                summary: Подключение термостата
+                value:
+                  requestedBy: 11111111-1111-4111-8111-111111111111
+                  typeId: 22222222-2222-4222-8222-222222222222
+                  serialNumber: TH-2048-001
+                  pairingCode: "683421"
+      responses:
+        '201':
+          description: Устройство зарегистрировано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterDeviceResponse'
+              examples:
+                registered:
+                  value:
+                    pairingId: 33333333-3333-4333-8333-333333333333
+                    deviceId: 44444444-4444-4444-8444-444444444444
+                    status: REGISTERED
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /internal/v1/devices/{deviceId}/commands:
+    post:
+      tags: [Control]
+      operationId: createDeviceCommand
+      summary: Создать команду управления устройством
+      description: >
+        Веб-бэкенд передаёт команду после проверки доступа пользователя
+        к дому. Ответ 202 означает, что сервис управления принял команду
+        в обработку, но устройство ещё не подтвердило её выполнение.
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          description: Идентификатор устройства
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommandRequest'
+            examples:
+              setTemperature:
+                summary: Задать температуру
+                value:
+                  requestedBy: 11111111-1111-4111-8111-111111111111
+                  commandType: SET_TEMPERATURE
+                  payload:
+                    targetTemperature: 22
+      responses:
+        '202':
+          description: Команда принята в обработку
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResponse'
+              examples:
+                queued:
+                  value:
+                    commandId: 55555555-5555-4555-8555-555555555555
+                    deviceId: 44444444-4444-4444-8444-444444444444
+                    status: QUEUED
+                    createdAt: "2026-10-01T06:30:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /internal/v1/devices/{deviceId}/dispatch:
+    post:
+      tags: [Integration]
+      operationId: dispatchDeviceCommand
+      summary: Передать команду адаптеру устройства
+      description: >
+        Сервис управления вызывает сервис интеграции. commandId служит
+        идентификатором для защиты от повторной передачи одной и той же
+        команды. Ответ 202 подтверждает приём интеграцией, а не выполнение
+        физического действия устройством.
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          description: Идентификатор устройства
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DispatchCommandRequest'
+            examples:
+              setTemperature:
+                value:
+                  commandId: 55555555-5555-4555-8555-555555555555
+                  commandType: SET_TEMPERATURE
+                  payload:
+                    targetTemperature: 22
+      responses:
+        '202':
+          description: Команда принята сервисом интеграции
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DispatchCommandResponse'
+              examples:
+                accepted:
+                  value:
+                    commandId: 55555555-5555-4555-8555-555555555555
+                    deliveryStatus: ACCEPTED
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /internal/v1/commands/{commandId}:
+    get:
+      tags: [Control]
+      operationId: getCommandStatus
+      summary: Получить статус команды
+      description: >
+        Веб-бэкенд запрашивает состояние команды для отображения
+        пользователю. ACCEPTED не означает физическое выполнение.
+        CONFIRMED допустим только после подтверждения от устройства.
+      parameters:
+        - name: commandId
+          in: path
+          required: true
+          description: Идентификатор команды
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Статус команды
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandResponse'
+              examples:
+                accepted:
+                  value:
+                    commandId: 55555555-5555-4555-8555-555555555555
+                    deviceId: 44444444-4444-4444-8444-444444444444
+                    status: ACCEPTED
+                    createdAt: "2026-10-01T06:30:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /internal/v1/devices/{deviceId}/telemetry:
+    get:
+      tags: [Monitoring]
+      operationId: getDeviceTelemetry
+      summary: Получить последние показания устройства
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          description: Идентификатор устройства
+          schema:
+            type: string
+            format: uuid
+        - name: parameter
+          in: query
+          required: false
+          description: Например, temperature
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Максимальное число показаний
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Список показаний; пустой массив, если показаний пока нет
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelemetryResponse'
+              examples:
+                temperature:
+                  value:
+                    deviceId: 44444444-4444-4444-8444-444444444444
+                    items:
+                      - parameter: temperature
+                        value: 21.7
+                        unit: celsius
+                        measuredAt: "2026-10-01T06:29:00Z"
+                      - parameter: temperature
+                        value: 21.5
+                        unit: celsius
+                        measuredAt: "2026-10-01T06:28:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    serviceBearer:
+      type: http
+      scheme: bearer
+      description: >
+        Токен вызывающего внутреннего сервиса. Способ его выдачи
+        определяется отдельно; публичный доступ к этим маршрутам запрещён.
+
+  schemas:
+    RegisterDeviceRequest:
+      type: object
+      required: [requestedBy, typeId, serialNumber, pairingCode]
+      properties:
+        requestedBy:
+          type: string
+          format: uuid
+          description: Проверенный веб-бэкендом идентификатор пользователя
+        typeId:
+          type: string
+          format: uuid
+        serialNumber:
+          type: string
+        pairingCode:
+          type: string
+          description: Одноразовый код подключения; не возвращается в ответе
+
+    RegisterDeviceResponse:
+      type: object
+      required: [pairingId, deviceId, status]
+      properties:
+        pairingId:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [REGISTERED]
+
+    CreateCommandRequest:
+      type: object
+      required: [requestedBy, commandType, payload]
+      properties:
+        requestedBy:
+          type: string
+          format: uuid
+        commandType:
+          type: string
+          description: >
+            Допустимые значения определяются возможностями типа устройства;
+            пример — SET_TEMPERATURE.
+        payload:
+          type: object
+          additionalProperties: true
+
+    DispatchCommandRequest:
+      type: object
+      required: [commandId, commandType, payload]
+      properties:
+        commandId:
+          type: string
+          format: uuid
+        commandType:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+
+    DispatchCommandResponse:
+      type: object
+      required: [commandId, deliveryStatus]
+      properties:
+        commandId:
+          type: string
+          format: uuid
+        deliveryStatus:
+          type: string
+          enum: [ACCEPTED]
+
+    CommandResponse:
+      type: object
+      required: [commandId, deviceId, status, createdAt]
+      properties:
+        commandId:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [QUEUED, ACCEPTED, CONFIRMED, FAILED]
+        createdAt:
+          type: string
+          format: date-time
+
+    TelemetryResponse:
+      type: object
+      required: [deviceId, items]
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TelemetryItem'
+
+    TelemetryItem:
+      type: object
+      required: [parameter, value, unit, measuredAt]
+      properties:
+        parameter:
+          type: string
+        value:
+          type: number
+          format: double
+          description: Числовое показание; видеопоток сюда не входит
+        unit:
+          type: string
+        measuredAt:
+          type: string
+          format: date-time
+
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Неверные параметры или JSON запроса
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            invalidParameter:
+              value:
+                code: INVALID_REQUEST
+                message: "Некорректные параметры запроса"
+
+    Unauthorized:
+      description: Не передан или недействителен токен сервиса
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            invalidToken:
+              value:
+                code: UNAUTHORIZED
+                message: "Недействительный токен сервиса"
+
+    Forbidden:
+      description: Вызывающий сервис не имеет права на операцию
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            accessDenied:
+              value:
+                code: FORBIDDEN
+                message: "Доступ к операции запрещён"
+
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            deviceNotFound:
+              value:
+                code: DEVICE_NOT_FOUND
+                message: "Устройство не найдено"
+
+    Conflict:
+      description: Конфликт состояния или повтор с отличающимися данными
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            alreadyRegistered:
+              value:
+                code: DEVICE_ALREADY_REGISTERED
+                message: "Устройство уже зарегистрировано"
+
+    InternalError:
+      description: Внутренняя ошибка сервиса
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          examples:
+            internalError:
+              value:
+                code: INTERNAL_ERROR
+                message: "Внутренняя ошибка сервиса"
